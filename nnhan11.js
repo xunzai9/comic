@@ -1,11 +1,9 @@
 var source = {
     name: "鸟鸟韩漫",
     key: "nnhanman7",
-    version: "1.0.10",
+    version: "1.0.11",
     minAppVersion: "1.0.0",
     url: "https://nnhanman7.com",
-    
-    // 漫阅+ 必须的基础配置
     searchOptions: [],
 
     getHeaders: function() {
@@ -22,7 +20,6 @@ var source = {
             return Network.get("https://nnhanman7.com", { "Referer": "https://nnhanman7.com/" })
                 .then(function(res) {
                     var comics = [];
-                    // 使用极简正则防止解析超时
                     var regex = /<li>[\s\S]*?href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?src="([^"]+)"/g;
                     var match;
                     while ((match = regex.exec(res)) !== null) {
@@ -68,15 +65,10 @@ var source = {
         }
     },
 
-    // 必须保留，解决 property of undefined 报错
     onTagSuggestionSelected: function(keyword) {
         return null;
     }
 };
 
-// 严谨的导出判定
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = source;
-} else {
-    source; // 确保脚本最后返回对象本身
-}
+// 关键：Venera 框架只需脚本执行后的最后一个值是该对象
+source;
