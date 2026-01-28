@@ -1,7 +1,7 @@
 class NnHanManSource extends ComicSource {
     name = "鸟鸟韩漫";
     key = "nnhanman7";
-    version = "1.6.5";
+    version = "1.6.6";
     minAppVersion = "1.0.0";
     url = "https://nnhanman7.com";
 
@@ -9,8 +9,7 @@ class NnHanManSource extends ComicSource {
         return {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
             "Referer": this.url + "/",
-            "Accept-Encoding": "gzip, deflate", // 强制指定编码，防止流式传输截断
-            "Connection": "keep-alive"
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         };
     }
 
@@ -24,21 +23,21 @@ class NnHanManSource extends ComicSource {
 
     explore = [
         {
-            title: "全部更新",
-            type: "singlePage",
+            title: "全部推荐",
+            type: "multiPartPage", // 必须是这个类型
             load: async (page) => {
                 const res = await Network.get(this.url, this.getHeaders());
                 const html = (typeof res === 'object') ? res.data : res;
                 if (!html) return [];
 
                 const comics = [];
-                // 放弃正则匹配 li 整体，改用最基础的 link 和 title 提取
-                // 这样即使 HTML 有残缺，只要 href 和 title 还在同一行就能抓到
+                // 采用“行扫描”法，无视 HTML 是否闭合
+                // 只要这一行包含漫画特征就抓取
                 const lines = html.split('<li');
                 
-                for (let line of lines) {
-                    // 只处理包含漫画链接的行
-                    if (line.includes('/comic/') && line.includes('title=')) {
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    if (line.includes('/comic/') && (line.includes('title=') || line.includes('srcset='))) {
                         const idM = /href="([^"]+)"/.exec(line);
                         const titleM = /title="([^"]+)"/.exec(line);
                         const coverM = /srcset="([^" ,]+)/.exec(line) || /src="([^"]+)"/.exec(line);
@@ -53,13 +52,19 @@ class NnHanManSource extends ComicSource {
                     }
                 }
 
-                // 简单的去重
+                // 移除重复项
                 const seen = new Set();
-                return comics.filter(c => {
-                    const duplicate = seen.has(c.id);
+                const uniqueComics = comics.filter(c => {
+                    if (seen.has(c.id)) return false;
                     seen.add(c.id);
-                    return !duplicate;
+                    return true;
                 });
+
+                // 封装成 multiPartPage 需要的格式
+                return [{
+                    title: "最新更新",
+                    comics: uniqueComics
+                }];
             }
         }
     ];
@@ -68,24 +73,21 @@ class NnHanManSource extends ComicSource {
         loadInfo: async (id) => {
             const res = await Network.get(this.fixUrl(id), this.getHeaders());
             const html = (typeof res === 'object') ? res.data : res;
-            if (!html) return { title: "Error", chapters: [] };
+            if (!html) return { title: "加载失败", chapters: [] };
 
             const titleMatch = /<h1>(.*?)<\/h1>/i.exec(html) || /<title>(.*?) - /i.exec(html);
             const chapters = [];
-            // 章节解析：寻找包含 chapter 的所有链接
-            const parts = html.split('href="');
-            for (let i = 1; i < parts.length; i++) {
-                const chunk = parts[i].split('"')[0];
-                if (chunk.includes('/chapter/')) {
-                    const titlePart = parts[i].split('>')[1] ? parts[i].split('>')[1].split('<')[0] : "章节";
-                    const cleanTitle = titlePart.trim();
-                    if (cleanTitle && !cleanTitle.includes("首页")) {
-                        chapters.push({ id: this.fixUrl(chunk), title: cleanTitle });
-                    }
+            // 章节匹配
+            const cpRegex = /href="([^"]*?\/chapter\/[^"]*?)"[^>]*>([\s\S]*?)<\/a>/g;
+            let m;
+            while ((m = cpRegex.exec(html)) !== null) {
+                const cTitle = m[2].replace(/<[^>]+>/g, "").trim();
+                if (cTitle && !cTitle.includes("首页")) {
+                    chapters.push({ id: this.fixUrl(m[1]), title: cTitle });
                 }
             }
             return { 
-                title: titleMatch ? titleMatch[1].trim() : "漫画详情", 
+                title: titleMatch ? titleMatch[1].trim() : "详情", 
                 chapters: chapters.reverse() 
             };
         },
@@ -93,7 +95,6 @@ class NnHanManSource extends ComicSource {
             const res = await Network.get(this.fixUrl(epId), this.getHeaders());
             const html = (typeof res === 'object') ? res.data : res;
             const images = [];
-            // 抓取正文图片
             const imgRegex = /src="([^"]+?\.(?:jpg|png|webp|jpeg)[^"]*?)"/gi;
             let m;
             while ((m = imgRegex.exec(html)) !== null) {
