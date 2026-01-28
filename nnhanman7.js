@@ -1,31 +1,26 @@
-class NnHanManSource extends ComicSource {
-    constructor() {
-        super();
-        this.name = "鸟鸟韩漫";
-        this.key = "nnhanman7";
-        this.version = "1.0.4";
-        this.minAppVersion = "1.0.0";
-        this.url = "https://nnhanman7.com";
-    }
+const source = {
+    name: "鸟鸟韩漫",
+    key: "nnhanman7",
+    version: "1.0.5",
+    minAppVersion: "1.0.0",
+    url: "https://nnhanman7.com",
+    searchOptions: [],
 
-    // 漫阅+ 必须的属性
-    searchOptions = [];
-
-    getHeaders() {
+    getHeaders: function() {
         return {
-            "Referer": this.url + "/",
+            "Referer": "https://nnhanman7.com/",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         };
-    }
+    },
 
-    explore = [{
+    explore: [{
         title: "最新更新",
         type: "multiPartPage",
-        load: async () => {
+        load: async function() {
             try {
-                const res = await Network.get(this.url, { headers: this.getHeaders() });
+                const res = await Network.get("https://nnhanman7.com", { headers: this.getHeaders() });
                 const comics = [];
-                // 针对该站首页 <li> 结构的精准正则
+                // 首页列表正则
                 const regex = /<a[^>]+href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?<img[^>]+src="([^"]+)"/g;
                 let match;
                 while ((match = regex.exec(res)) !== null) {
@@ -43,11 +38,14 @@ class NnHanManSource extends ComicSource {
                 return [];
             }
         }
-    }];
+    }],
 
-    comic = {
-        loadInfo: async (id) => {
-            const res = await Network.get(this.url + id, { headers: this.getHeaders() });
+    comic: {
+        loadInfo: async function(id) {
+            const baseUrl = "https://nnhanman7.com";
+            const res = await Network.get(baseUrl + id, { 
+                headers: { "Referer": baseUrl + "/" } 
+            });
             const chapters = [];
             const chapterRegex = /href="([^"]+)"[^>]*>([\s\S]*?第[\s\S]*?话[\s\S]*?)<\/a>/g;
             let m;
@@ -59,23 +57,26 @@ class NnHanManSource extends ComicSource {
             }
             return { title: "漫画详情", chapters: chapters };
         },
-        loadEp: async (comicId, epId) => {
-            const res = await Network.get(this.url + epId, { headers: this.getHeaders() });
+        loadEp: async function(comicId, epId) {
+            const baseUrl = "https://nnhanman7.com";
+            const res = await Network.get(baseUrl + epId, { 
+                headers: { "Referer": baseUrl + "/" } 
+            });
             const images = [];
             const imgRegex = /img[^>]+src="([^"]+)"/g;
             let m;
             while ((m = imgRegex.exec(res)) !== null) {
                 if (m[1].includes('jmpic')) images.push(m[1]);
             }
-            return { images };
+            return { images: images };
         }
-    };
+    },
 
-    // 漫阅+ 必要回调
-    onTagSuggestionSelected(keyword) {
+    onTagSuggestionSelected: function(keyword) {
         return null;
     }
-}
+};
 
-// 【关键步骤】漫阅+ 需要实例化对象并赋值给全局变量
-const source = new NnHanManSource();
+// 漫阅+ 最终识别的是这个变量
+// @ts-ignore
+module.exports = source;
