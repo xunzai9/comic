@@ -1,7 +1,7 @@
 class NnHanManSource extends ComicSource {
     name = "鸟鸟韩漫";
     key = "nnhanman7";
-    version = "1.6.9";
+    version = "1.7.1";
     minAppVersion = "1.0.0";
     url = "https://nnhanman7.com";
 
@@ -12,7 +12,7 @@ class NnHanManSource extends ComicSource {
         };
     }
 
-    // 路径补全与 Unicode 强制转换
+    // 路径补全
     fix(u) {
         if (!u) return "";
         let res = u.replace(/\\/g, "").trim();
@@ -26,58 +26,44 @@ class NnHanManSource extends ComicSource {
             title: "最新更新",
             type: "multiPartPage",
             load: async (page) => {
+                // 请求目录页，它的数据排布比首页更紧凑
                 const res = await Network.get(this.url + "/catalog.php?orderby=active_time", this.getHeaders());
                 const html = (typeof res === 'object') ? res.data : res;
                 if (!html) return [];
 
-                let comics = [];
-
-                // 1. 尝试从脚本变量中提取 (qTcmsWapTop)
-                // 增加对 Unicode 编码的兼容性匹配
-                const jsonMatch = /qTcmsWapTop\s*=\s*(\[[\s\S]*?\]);/.exec(html);
-                if (jsonMatch) {
-                    try {
-                        // 使用正则表达式直接提取 name 和 url，避免 JSON.parse 在截断时报错
-                        const itemRegex = /"url":"([^"]+)","name":"([^"]+)"/g;
-                        let m;
-                        while ((m = itemRegex.exec(jsonMatch[1])) !== null) {
-                            // 解码 Unicode (\uXXXX)
-                            let title = m[2].replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16)));
-                            comics.push({
-                                id: this.fix(m[1]),
-                                title: title,
-                                cover: "" // 脚本里通常不带封面，交给下方的 HTML 匹配补全
-                            });
-                        }
-                    } catch (e) {}
+                const comics = [];
+                
+                // 方案：直接全局搜索所有的 <li> 块内容
+                // 即使 HTML 断了，只要抓到一组 href 和 title 就能显示
+                const itemRegex = /<li[^>]*>[\s\S]*?href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?srcset="([^" ,]+)/g;
+                
+                let m;
+                while ((m = itemRegex.exec(html)) !== null) {
+                    const id = this.fix(m[1]);
+                    // 只抓取漫画链接，过滤搜索词链接
+                    if (id.includes('/comic/')) {
+                        comics.push({
+                            id: id,
+                            title: m[2].trim(),
+                            cover: this.fix(m[3])
+                        });
+                    }
                 }
 
-                // 2. 尝试从 HTML 列表中提取 (包含封面)
-                const listParts = html.split('<li');
-                for (let i = 1; i < listParts.length; i++) {
-                    const part = listParts[i];
-                    if (part.includes('/comic/')) {
-                        const idM = /href="([^"]+)"/.exec(part);
-                        const titleM = /title="([^"]+)"/.exec(part) || />([^<]+)<\/a>/.exec(part);
-                        const coverM = /srcset="([^" ,]+)/.exec(part) || /src="([^"]+)"/.exec(part);
-
-                        if (idM && titleM) {
-                            const cid = this.fix(idM[1]);
-                            const ctitle = titleM[1].trim();
-                            const ccover = coverM ? this.fix(coverM[1]) : "";
-                            
-                            // 如果刚才脚本已经抓到了，就更新它的封面，否则新增
-                            let existing = comics.find(c => c.id === cid);
-                            if (existing) {
-                                if (!existing.cover) existing.cover = ccover;
-                            } else {
-                                comics.push({ id: cid, title: ctitle, cover: ccover });
-                            }
+                // 兜底：如果带封面的正则没抓到（可能 srcset 还没加载出来就断了）
+                // 就用最简单的链接+标题正则再扫一遍
+                if (comics.length === 0) {
+                    const simpleRegex = /href="(\/comic\/[^"]+?\.html)"[^>]*title="([^"]+)"/g;
+                    let sm;
+                    while ((sm = simpleRegex.exec(html)) !== null) {
+                        const sid = this.fix(sm[1]);
+                        if (!comics.find(c => c.id === sid)) {
+                            comics.push({ id: sid, title: sm[2].trim(), cover: "" });
                         }
                     }
                 }
 
-                return [{ title: "目录更新", comics: comics }];
+                return [{ title: "全站更新", comics: comics }];
             }
         }
     ];
@@ -96,7 +82,7 @@ class NnHanManSource extends ComicSource {
                     chapters.push({ id: this.fix(m[1]), title: cTitle });
                 }
             }
-            return { title: titleMatch ? titleMatch[1].trim() : "详情", chapters: chapters.reverse() };
+            return { title: titleMatch ? titleMatch[1].trim() : "漫画详情", chapters: chapters.reverse() };
         },
         loadEp: async (comicId, epId) => {
             const res = await Network.get(this.fix(epId), this.getHeaders());
