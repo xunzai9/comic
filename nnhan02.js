@@ -1,6 +1,6 @@
 (function() {
     return {
-        name: "鸟鸟韩漫测试",
+        name: "nnhm",
         key: "nnhanman7_test",
         version: "1.0.16",
         minAppVersion: "1.0.0",
