@@ -1,138 +1,131 @@
 class NnHanManSource extends ComicSource {
-    // 源的基本信息
-    name = "NnHanMan"
+    name = "鸟鸟韩漫"
     key = "nnhanman7"
-    version = "1.0.0"
+    version = "1.0.1"
     minAppVersion = "1.0.0"
     url = "https://nnhanman7.com"
 
-    // 定义通用的请求头，防止图片无法加载（防盗链）
+    // 网站有防盗链，必须设置 Referer
     getHeaders() {
         return {
             "Referer": this.url + "/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            "X-Requested-With": "XMLHttpRequest"
         }
     }
 
-    // 1. 发现页面（首页/推荐）
+    // 1. 发现/首页
     explore = [{
         title: "最新更新",
         type: "multiPartPage",
         load: async () => {
             try {
-                // 请求首页
-                const res = await Network.get(this.url, {
-                    headers: this.getHeaders()
-                });
+                const res = await Network.get(this.url, { headers: this.getHeaders() });
                 
-                // 解析首页漫画列表
-                // 注意：这里假设 HTML 结构是类似 <div class="item">...<a href="...">...<img src="...">...</div>
-                // 您可能需要根据实际网页结构调整 regex
+                // 基于您提供的HTML分析：
+                // 结构: <li> <a class="ImgA" href="..."> ... <img src="..."> ... <a class="txtA">标题</a>
                 const comics = [];
                 
-                // 这是一个通用的正则匹配模式，用于提取 链接、封面、标题
-                // 假设列表项包含 href, img src, title
-                const regex = /<div class="[^"]*item[^"]*">[\s\S]*?href="([^"]+)"[\s\S]*?src="([^"]+)"[\s\S]*?title="([^"]+)"/g;
-                
+                // 正则匹配：
+                // 1. 匹配 href="/comic/..."
+                // 2. 匹配 title="..."
+                // 3. 匹配 img src="..."
+                const regex = /<a\s+class="ImgA"\s+href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?img\s+src="([^"]+)"/g;
+
                 let match;
                 while ((match = regex.exec(res)) !== null) {
+                    let cover = match[3];
+                    // 处理 webp 和 jpg 的情况，有时源码里是 srcset，这里取 img src
+                    if (cover.startsWith("//")) cover = "https:" + cover;
+
                     comics.push({
-                        id: match[1], // 漫画详情页的相对链接或绝对链接
-                        cover: match[2],
-                        title: match[3],
-                        // subtitle: match[4] // 如果有最新话数可以加在这里
+                        id: match[1], // 比如 /comic/nv-tong-shi-tai-fan-gui.html
+                        title: match[2],
+                        cover: cover
                     });
                 }
 
                 return [{
-                    title: "最新更新",
+                    title: "首页推荐",
                     comics: comics,
                     viewMore: null 
                 }];
             } catch (e) {
-                console.log(e);
+                console.error(e);
                 return [];
             }
         }
     }]
 
-    // 2. 搜索功能
+    // 2. 搜索
     search = {
         load: async (keyword, options, page) => {
             try {
-                // 构造搜索 URL
-                // 假设搜索链接为 https://nnhanman7.com/search?keyword=xxx
-                const searchUrl = `${this.url}/search?keyword=${encodeURIComponent(keyword)}&page=${page}`;
+                // 根据HTML中 <form action="/catalog.php" name="key"> 分析得出
+                const searchUrl = `${this.url}/catalog.php?key=${encodeURIComponent(keyword)}&page=${page}`;
                 
-                const res = await Network.get(searchUrl, {
-                    headers: this.getHeaders()
-                });
-
+                const res = await Network.get(searchUrl, { headers: this.getHeaders() });
                 const comics = [];
-                // 复用上面的正则逻辑，大多数网站搜索结果和首页结构类似
-                const regex = /<div class="[^"]*item[^"]*">[\s\S]*?href="([^"]+)"[\s\S]*?src="([^"]+)"[\s\S]*?title="([^"]+)"/g;
+                
+                // 搜索结果页通常复用列表样式
+                const regex = /<a\s+class="ImgA"\s+href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?img\s+src="([^"]+)"/g;
                 
                 let match;
                 while ((match = regex.exec(res)) !== null) {
                     comics.push({
                         id: match[1],
-                        cover: match[2],
-                        title: match[3]
+                        title: match[2],
+                        cover: match[3]
                     });
                 }
 
                 return {
                     comics: comics,
-                    maxPage: comics.length > 0 ? page + 1 : page // 简单的分页判断
+                    maxPage: comics.length > 0 ? page + 1 : page
                 };
             } catch (e) {
-                console.log(e);
                 return { comics: [], maxPage: 1 };
             }
         },
         optionList: []
     }
 
-    // 3. 漫画详情及章节列表
+    // 3. 漫画详情 (根据常规韩漫网站结构推断)
     comic = {
         loadInfo: async (id) => {
-            // 处理 ID，确保是完整的 URL
-            const comicUrl = id.startsWith("http") ? id : this.url + id;
-            
-            const res = await Network.get(comicUrl, {
-                headers: this.getHeaders()
-            });
+            const fullUrl = this.url + id;
+            const res = await Network.get(fullUrl, { headers: this.getHeaders() });
 
-            // 提取标题
-            const titleMatch = /<h1[^>]*>(.*?)<\/h1>/i.exec(res);
-            const title = titleMatch ? titleMatch[1].trim() : "Unknown Title";
+            // 提取标题 (通常在 h1 或 h2)
+            const titleMatch = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(res) || /<title>([^<]+)/.exec(res);
+            const title = titleMatch ? titleMatch[1].trim() : "未知标题";
 
             // 提取封面
-            const coverMatch = /<div class="[^"]*cover[^"]*">[\s\S]*?src="([^"]+)"/i.exec(res);
+            const coverMatch = /<div[^>]*class="[^"]*img[^"]*"[^>]*>[\s\S]*?src="([^"]+)"/i.exec(res);
             const cover = coverMatch ? coverMatch[1] : "";
 
             // 提取简介
-            const descMatch = /<div class="[^"]*summary[^"]*">([\s\S]*?)<\/div>/i.exec(res);
-            // 简单的去除 HTML 标签
-            const description = descMatch ? descMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+            const descMatch = /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(res) || /name="description"\s+content="([^"]+)"/.exec(res);
+            let description = descMatch ? descMatch[1].replace(/<[^>]+>/g, "").trim() : "";
 
-            // 提取章节列表
-            // 假设结构为 <li><a href="/chapter-1">Chapter 1</a></li>
+            // 提取章节
+            // 假设章节链接结构包含 href="..." 和 章节名
             const chapters = [];
-            const chapterRegex = /<a[^>]+href="([^"]+)"[^>]*class="[^"]*chapter[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
-            // 或者尝试更通用的列表匹配
-            // const chapterRegex = /<li[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-
+            
+            // 匹配所有指向章节的链接，通常包含 chapter 字样或数字
+            // 针对该网站首页看到的 /comic/xxx/chapter-xxx.html 结构
+            const chapterRegex = /<li[^>]*>[\s\S]*?<a[^>]+href="([^"]*chapter[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/li>/g;
+            
             let match;
             while ((match = chapterRegex.exec(res)) !== null) {
                 chapters.push({
-                    id: match[1], // 章节链接
-                    title: match[2].trim()
+                    id: match[1],
+                    title: match[2].replace(/<[^>]+>/g, "").trim() // 去除可能的 span 标签
                 });
             }
 
-            // 很多网站章节是倒序的（最新在最前），阅读器通常希望顺序，根据需要翻转
-            // chapters.reverse();
+            // 如果章节是倒序的（最新的在上面），阅读器通常需要反转
+            // chapters.reverse(); 
 
             return {
                 title: title,
@@ -142,31 +135,27 @@ class NnHanManSource extends ComicSource {
             };
         },
 
-        // 4. 加载章节图片
+        // 4. 阅读章节
         loadEp: async (comicId, epId) => {
-            const epUrl = epId.startsWith("http") ? epId : this.url + epId;
-            
-            const res = await Network.get(epUrl, {
-                headers: this.getHeaders()
-            });
+            const fullUrl = this.url + epId;
+            const res = await Network.get(fullUrl, { headers: this.getHeaders() });
 
             const images = [];
-            // 提取图片
-            // 常见结构：<div class="reader-content"><img src="..."></div>
-            // 使用正则匹配所有图片标签
+            // 匹配阅读页的所有图片
+            // 通常韩漫网站是长条图，img 标签在 content 容器内
             const imgRegex = /<img[^>]+src="([^"]+)"[^>]*>/g;
-            
-            // 为了避免匹配到页眉页脚的图标，通常可以先截取包含漫画内容的 div
-            // 这里为了简单，匹配页面内所有大图，或者您可以尝试先定位 container
-            // const contentMatch = /<div class="reading-content">([\s\S]*?)<\/div>/i.exec(res);
-            // const contentHtml = contentMatch ? contentMatch[1] : res;
             
             let match;
             while ((match = imgRegex.exec(res)) !== null) {
                 const imgUrl = match[1];
-                // 简单的过滤器：忽略 logo、小图标等非漫画图片
-                if (!imgUrl.includes("logo") && !imgUrl.includes("icon") && imgUrl.length > 20) {
-                     images.push(imgUrl);
+                // 简单的过滤：排除 logo、icon、banner
+                if (!imgUrl.includes("logo") && !imgUrl.includes("icon") && !imgUrl.includes("favicon")) {
+                    // 处理相对路径
+                    if (imgUrl.startsWith("http")) {
+                         images.push(imgUrl);
+                    } else {
+                         images.push(this.url + imgUrl);
+                    }
                 }
             }
 
@@ -174,13 +163,13 @@ class NnHanManSource extends ComicSource {
                 images: images
             };
         },
-
-        // 图片加载时的额外处理（防盗链关键）
-        onImageLoad: (url, comicId, epId) => {
+        
+        // 图片加载头信息
+        onImageLoad: (url) => {
             return {
                 headers: {
-                    "Referer": this.url, // 告诉服务器我们来自该网站
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    "Referer": this.url + "/",
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                 }
             };
         }
