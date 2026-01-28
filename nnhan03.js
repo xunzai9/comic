@@ -2,7 +2,7 @@
     return {
         name: "nnhm",
         key: "nnhanman7_test",
-        version: "1.0.16",
+        version: "1.0.17",
         minAppVersion: "1.0.0",
         url: "https://nnhanman7.com",
         searchOptions: [],
