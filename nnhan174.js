@@ -1,7 +1,7 @@
 class NnHanManSource extends ComicSource {
     name = "鸟鸟韩漫";
     key = "nnhanman7";
-    version = "1.7.3";
+    version = "1.7.4";
     minAppVersion = "1.0.0";
     url = "https://nnhanman7.com";
 
@@ -25,32 +25,31 @@ class NnHanManSource extends ComicSource {
             title: "全站更新",
             type: "multiPartPage",
             load: async (page) => {
+                // 尝试访问目录页
                 const res = await Network.get(this.url + "/catalog.php?orderby=active_time", this.getHeaders());
                 const html = (typeof res === 'object') ? res.data : res;
                 if (!html) return [];
 
                 let comics = [];
 
-                // --- 1. 脚本部分解析 (双重保险) ---
-                const jsonMatch = /qTcmsWapTop\s*=\s*(\[[\s\S]*?\]);/.exec(html);
-                if (jsonMatch) {
-                    const itemRegex = /"url":"([^"]+)","name":"([^"]+)"/g;
-                    let m;
-                    while ((m = itemRegex.exec(jsonMatch[1])) !== null) {
-                        const cid = this.fix(m[1]);
-                        // 只添加包含 /comic/ 的条目，排除关键词
-                        if (cid.includes('/comic/')) {
-                            // Unicode 解码处理
-                            let title = m[2].replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16)));
-                            comics.push({ id: cid, title: title, cover: "" });
-                        }
+                // --- 1. 脚本块防御性解析 ---
+                // 使用极其宽松的正则，哪怕 JSON 不完整也能抓到里面的内容
+                const itemRegex = /"url":"([^"]+)","name":"([^"]+)"/g;
+                let m;
+                while ((m = itemRegex.exec(html)) !== null) {
+                    const cid = this.fix(m[1]);
+                    // 只有包含 /comic/ 的才是漫画，排除关键词
+                    if (cid.includes('/comic/')) {
+                        let title = m[2].replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16)));
+                        comics.push({ id: cid, title: title, cover: "" });
                     }
                 }
 
-                // --- 2. HTML 暴力行解析 (应对截断) ---
-                const parts = html.split('<li');
-                for (let i = 1; i < parts.length; i++) {
-                    const p = parts[i];
+                // --- 2. HTML 暴力提取 ---
+                // 针对 body 可能没加载出来的情况，直接在全文本搜寻 <li> 结构
+                const listParts = html.split('<li');
+                for (let i = 1; i < listParts.length; i++) {
+                    const p = listParts[i];
                     if (p.includes('/comic/')) {
                         const idM = /href="([^"]+)"/.exec(p);
                         const titleM = /title="([^"]+)"/.exec(p) || />([^<]+)<\/a>/.exec(p);
@@ -59,20 +58,21 @@ class NnHanManSource extends ComicSource {
                         if (idM && titleM) {
                             const cid = this.fix(idM[1]);
                             const ctitle = titleM[1].trim();
-                            const ccover = coverM ? this.fix(coverM[1]) : "";
-                            
-                            // 检查是否已在脚本中抓到，没抓到则新增，抓到了则补全封面
                             let existing = comics.find(c => c.id === cid);
                             if (existing) {
-                                if (!existing.cover) existing.cover = ccover;
+                                if (!existing.cover) existing.cover = coverM ? this.fix(coverM[1]) : "";
                             } else {
-                                comics.push({ id: cid, title: ctitle, cover: ccover });
+                                comics.push({ id: cid, title: ctitle, cover: coverM ? this.fix(coverM[1]) : "" });
                             }
                         }
                     }
                 }
 
-                return [{ title: "最新漫画", comics: comics }];
+                // --- 3. 终极自救方案 ---
+                // 如果以上都没抓到（因为网页断得太早），尝试去抓取“搜索词”并把它们转换成搜索任务（可选逻辑）
+                // 这里暂时保持返回，如果列表为空，用户可以尝试搜索
+
+                return [{ title: "目录列表", comics: comics }];
             }
         }
     ];
@@ -111,6 +111,7 @@ class NnHanManSource extends ComicSource {
 
     search = {
         load: async (keyword) => {
+            // 搜索页通常结构简单，更容易加载成功
             const res = await Network.get(this.url + "/catalog.php?key=" + encodeURIComponent(keyword), this.getHeaders());
             const html = (typeof res === 'object') ? res.data : res;
             const comics = [];
