@@ -1,18 +1,19 @@
 class NnHanManSource extends ComicSource {
     name = "鸟鸟韩漫";
     key = "nnhanman7";
-    version = "1.7.1";
+    version = "1.7.2";
     minAppVersion = "1.0.0";
     url = "https://nnhanman7.com";
 
     getHeaders() {
         return {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-            "Referer": this.url + "/"
+            "Referer": this.url + "/",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9"
         };
     }
 
-    // 路径补全
     fix(u) {
         if (!u) return "";
         let res = u.replace(/\\/g, "").trim();
@@ -23,47 +24,56 @@ class NnHanManSource extends ComicSource {
 
     explore = [
         {
-            title: "最新更新",
+            title: "最近更新",
             type: "multiPartPage",
             load: async (page) => {
-                // 请求目录页，它的数据排布比首页更紧凑
-                const res = await Network.get(this.url + "/catalog.php?orderby=active_time", this.getHeaders());
+                // 关键改动：请求带 page 参数的路径，避开缓存和某些截断策略
+                const targetUrl = this.url + "/catalog.php?page=1&orderby=active_time";
+                const res = await Network.get(targetUrl, this.getHeaders());
                 const html = (typeof res === 'object') ? res.data : res;
                 if (!html) return [];
 
                 const comics = [];
                 
-                // 方案：直接全局搜索所有的 <li> 块内容
-                // 即使 HTML 断了，只要抓到一组 href 和 title 就能显示
-                const itemRegex = /<li[^>]*>[\s\S]*?href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?srcset="([^" ,]+)/g;
-                
-                let m;
-                while ((m = itemRegex.exec(html)) !== null) {
-                    const id = this.fix(m[1]);
-                    // 只抓取漫画链接，过滤搜索词链接
-                    if (id.includes('/comic/')) {
-                        comics.push({
-                            id: id,
-                            title: m[2].trim(),
-                            cover: this.fix(m[3])
-                        });
-                    }
-                }
+                // 既然不需要 JSON，我们直接用最激进的 HTML 行匹配
+                // 即使 HTML 断掉，只要能抓到一行 a 标签就算成功
+                const parts = html.split('<li');
+                for (let i = 1; i < parts.length; i++) {
+                    const p = parts[i];
+                    if (p.includes('/comic/')) {
+                        // 尝试抓取 ID
+                        const idM = /href="([^"]+)"/.exec(p);
+                        // 尝试抓取标题（优先找 title 属性，找不到找 a 标签中间的内容）
+                        const titleM = /title="([^"]+)"/.exec(p) || />([^<]+)<\/a>/.exec(p);
+                        // 尝试抓取图片
+                        const coverM = /srcset="([^" ,]+)/.exec(p) || /src="([^"]+)"/.exec(p);
 
-                // 兜底：如果带封面的正则没抓到（可能 srcset 还没加载出来就断了）
-                // 就用最简单的链接+标题正则再扫一遍
-                if (comics.length === 0) {
-                    const simpleRegex = /href="(\/comic\/[^"]+?\.html)"[^>]*title="([^"]+)"/g;
-                    let sm;
-                    while ((sm = simpleRegex.exec(html)) !== null) {
-                        const sid = this.fix(sm[1]);
-                        if (!comics.find(c => c.id === sid)) {
-                            comics.push({ id: sid, title: sm[2].trim(), cover: "" });
+                        if (idM && titleM) {
+                            const cid = this.fix(idM[1]);
+                            const ctitle = titleM[1].trim();
+                            // 只有是真正的漫画链接才加入
+                            if (cid.includes('/comic/') && !comics.find(c => c.id === cid)) {
+                                comics.push({
+                                    id: cid,
+                                    title: ctitle,
+                                    cover: coverM ? this.fix(coverM[1]) : ""
+                                });
+                            }
                         }
                     }
                 }
 
-                return [{ title: "全站更新", comics: comics }];
+                if (comics.length === 0) {
+                    // 最终兜底：如果上面都没抓到，说明 HTML 真的断得太厉害
+                    // 尝试抓取页面上任何看起来像漫画链接的东西
+                    const fallbackRegex = /href="(\/comic\/[^"]+?\.html)"[^>]*>([^<]+)/g;
+                    let f;
+                    while ((f = fallbackRegex.exec(html)) !== null) {
+                        comics.push({ id: this.fix(f[1]), title: f[2].trim(), cover: "" });
+                    }
+                }
+
+                return [{ title: "更新列表", comics: comics }];
             }
         }
     ];
@@ -78,11 +88,11 @@ class NnHanManSource extends ComicSource {
             let m;
             while ((m = cpRegex.exec(html)) !== null) {
                 const cTitle = m[2].replace(/<[^>]+>/g, "").trim();
-                if (cTitle && !cTitle.includes("首页")) {
+                if (ctitle && !ctitle.includes("首页")) {
                     chapters.push({ id: this.fix(m[1]), title: cTitle });
                 }
             }
-            return { title: titleMatch ? titleMatch[1].trim() : "漫画详情", chapters: chapters.reverse() };
+            return { title: titleMatch ? titleMatch[1].trim() : "漫画", chapters: chapters.reverse() };
         },
         loadEp: async (comicId, epId) => {
             const res = await Network.get(this.fix(epId), this.getHeaders());
