@@ -2,7 +2,7 @@
     return {
         name: "鸟鸟韩漫",
         key: "nnhanman7",
-        version: "1.0.14",
+        version: "1.0.15",
         minAppVersion: "1.0.0",
         url: "https://nnhanman7.com",
         searchOptions: [],
@@ -10,7 +10,7 @@
         getHeaders: function() {
             return {
                 "Referer": "https://nnhanman7.com/",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"
             };
         },
 
