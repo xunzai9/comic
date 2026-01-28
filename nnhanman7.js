@@ -1,10 +1,9 @@
-const source = {
+var source = {
     name: "鸟鸟韩漫",
     key: "nnhanman7",
-    version: "1.0.5",
+    version: "1.0.8",
     minAppVersion: "1.0.0",
     url: "https://nnhanman7.com",
-    searchOptions: [],
 
     getHeaders: function() {
         return {
@@ -17,66 +16,47 @@ const source = {
         title: "最新更新",
         type: "multiPartPage",
         load: async function() {
-            try {
-                const res = await Network.get("https://nnhanman7.com", { headers: this.getHeaders() });
-                const comics = [];
-                // 首页列表正则
-                const regex = /<a[^>]+href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?<img[^>]+src="([^"]+)"/g;
-                let match;
-                while ((match = regex.exec(res)) !== null) {
-                    const id = match[1];
-                    if (id.includes('/comic/')) {
-                        comics.push({
-                            id: id,
-                            title: match[2],
-                            cover: match[3]
-                        });
-                    }
+            var res = await Network.get("https://nnhanman7.com", { headers: this.getHeaders() });
+            var comics = [];
+            // 针对你提供源码的精准匹配：匹配 <li> 里的图片和标题
+            var regex = /<li>[\s\S]*?href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?src="([^"]+)"/g;
+            var match;
+            while ((match = regex.exec(res)) !== null) {
+                if (match[1].indexOf('/comic/') !== -1) {
+                    comics.push({
+                        id: match[1],
+                        title: match[2],
+                        cover: match[3]
+                    });
                 }
-                return [{ title: "首页推荐", comics: comics }];
-            } catch (e) {
-                return [];
             }
+            return [{ title: "首页推荐", comics: comics }];
         }
     }],
 
     comic: {
         loadInfo: async function(id) {
-            const baseUrl = "https://nnhanman7.com";
-            const res = await Network.get(baseUrl + id, { 
-                headers: { "Referer": baseUrl + "/" } 
-            });
-            const chapters = [];
-            const chapterRegex = /href="([^"]+)"[^>]*>([\s\S]*?第[\s\S]*?话[\s\S]*?)<\/a>/g;
-            let m;
-            while ((m = chapterRegex.exec(res)) !== null) {
-                chapters.push({
-                    id: m[1],
-                    title: m[2].replace(/<[^>]+>/g, "").trim()
-                });
+            var res = await Network.get("https://nnhanman7.com" + id, { headers: { "Referer": "https://nnhanman7.com/" } });
+            var chapters = [];
+            var reg = /href="([^"]+)"[^>]*>([\s\S]*?第[\s\S]*?话[\s\S]*?)<\/a>/g;
+            var m;
+            while ((m = reg.exec(res)) !== null) {
+                chapters.push({ id: m[1], title: m[2].replace(/<[^>]+>/g, "").trim() });
             }
             return { title: "漫画详情", chapters: chapters };
         },
         loadEp: async function(comicId, epId) {
-            const baseUrl = "https://nnhanman7.com";
-            const res = await Network.get(baseUrl + epId, { 
-                headers: { "Referer": baseUrl + "/" } 
-            });
-            const images = [];
-            const imgRegex = /img[^>]+src="([^"]+)"/g;
-            let m;
-            while ((m = imgRegex.exec(res)) !== null) {
-                if (m[1].includes('jmpic')) images.push(m[1]);
+            var res = await Network.get("https://nnhanman7.com" + epId, { headers: { "Referer": "https://nnhanman7.com/" } });
+            var images = [];
+            var m, reg = /img[^>]+src="([^"]+)"/g;
+            while ((m = reg.exec(res)) !== null) {
+                if (m[1].indexOf('jmpic') !== -1) images.push(m[1]);
             }
             return { images: images };
         }
-    },
-
-    onTagSuggestionSelected: function(keyword) {
-        return null;
     }
 };
 
-// 漫阅+ 最终识别的是这个变量
+// 漫阅+ 必须要这一行
 // @ts-ignore
 module.exports = source;
